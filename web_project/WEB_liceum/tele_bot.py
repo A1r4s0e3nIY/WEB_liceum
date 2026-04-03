@@ -9,13 +9,16 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
+from geopy import geocoders
 
 
-bot = Bot("8573629235:AAFkezNHEOOT8ZxsyysACPPmrGu65LwSOwY") 
+bot = Bot("8573629235:AAFkezNHEOOT8ZxsyysACPPmrGu65LwSOwY", proxy="datacloud-tech.org") 
 
 dp = Dispatcher()
 
 chat_id = None
+
+sutc = 0
 
 class Plans(StatesGroup):
     plan_add = State()
@@ -53,7 +56,17 @@ all_dates = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_del], [all
 dates_add_solo = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_change], [start_menu_bt]])
 start_reg = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Начать регистрацию📃", callback_data="start_reg")]])
 geopos_select = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Ваше местоположение❓", callback_data="pos_select")]])
-
+geoposition = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Калининград", callback_data="Калининград")], 
+                                                    [InlineKeyboardButton(text="Москва", callback_data="Москва")], 
+                                                    [InlineKeyboardButton(text="Самара", callback_data="Самара")], 
+                                                    [InlineKeyboardButton(text="Екатеринбург", callback_data="Екатеринбург")], 
+                                                    [InlineKeyboardButton(text="Омск", callback_data="Омск")], 
+                                                    [InlineKeyboardButton(text="Новосибирск", callback_data="Новосибирск")], 
+                                                    [InlineKeyboardButton(text="Иркутск", callback_data="Иркутск")], 
+                                                    [InlineKeyboardButton(text="Якутск", callback_data="Якутск")], 
+                                                    [InlineKeyboardButton(text="Владивосток", callback_data="Владивосток")], 
+                                                    [InlineKeyboardButton(text="Дружина", callback_data="Дружина")], 
+                                                    [InlineKeyboardButton(text="Петропавловск-Камчатский", callback_data="Петропавловск-Камчатский")]])
 
 @dp.message(CommandStart())
 async def start(message: Message):
@@ -74,7 +87,15 @@ async def start(message: Message):
 @dp.callback_query(F.data == "start_reg")
 async def registration(Callback: CallbackQuery, state: FSMContext):
     await state.set_state(Reg.time_input)
-    await callback_query.answer(f"Укажите ваше местоположение на карте(необходимо для корректной работы бота)", reply_markup=pos_select) #нужно реализовать любым образом API Яндекса для выбора местоположения
+    await callback_query.answer(f"Укажите ваш город.\nЕсли Вы живете не в городе, или города, в котором Вы живете, нет, выберите ближайший к вам город из списка.", reply_markup=geoposition)
+    data = callback_query.data
+    gn = geopy.geocoders.GeoNames(username='имя учётной записи')
+    loc = gn.geocode(data)
+    loc_tz = gn.reverse_timezone(loc.point)
+    dt_UTC = datetime(2020, 11, 27, 12, 0, 0, tzinfo=timezone.utc)
+    sutc = dt_UTC.astimezone(loc_tz.pytz_timezone)
+    print(sutc)
+
 
 @dp.callback_query(F.data == "main_menu")
 async def menu(callback: CallbackQuery, state: FSMContext):
