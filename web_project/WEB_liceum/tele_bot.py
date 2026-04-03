@@ -9,13 +9,16 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
+from geopy import geocoders
 
 
-bot = Bot("8573629235:AAFkezNHEOOT8ZxsyysACPPmrGu65LwSOwY") 
+bot = Bot("8573629235:AAFkezNHEOOT8ZxsyysACPPmrGu65LwSOwY", proxy="datacloud-tech.org") 
 
 dp = Dispatcher()
 
 chat_id = None
+
+sutc = 0
 
 class Plans(StatesGroup):
     plan_add = State()
@@ -53,7 +56,17 @@ all_dates = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_del], [all
 dates_add_solo = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_change], [start_menu_bt]])
 start_reg = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Начать регистрацию📃", callback_data="start_reg")]])
 geopos_select = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Ваше местоположение❓", callback_data="pos_select")]])
-
+geoposition = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Калининград", callback_data="Калининград")], 
+                                                    [InlineKeyboardButton(text="Москва", callback_data="Москва")], 
+                                                    [InlineKeyboardButton(text="Самара", callback_data="Самара")], 
+                                                    [InlineKeyboardButton(text="Екатеринбург", callback_data="Екатеринбург")], 
+                                                    [InlineKeyboardButton(text="Омск", callback_data="Омск")], 
+                                                    [InlineKeyboardButton(text="Новосибирск", callback_data="Новосибирск")], 
+                                                    [InlineKeyboardButton(text="Иркутск", callback_data="Иркутск")], 
+                                                    [InlineKeyboardButton(text="Якутск", callback_data="Якутск")], 
+                                                    [InlineKeyboardButton(text="Владивосток", callback_data="Владивосток")], 
+                                                    [InlineKeyboardButton(text="Дружина", callback_data="Дружина")], 
+                                                    [InlineKeyboardButton(text="Петропавловск-Камчатский", callback_data="Петропавловск-Камчатский")]])
 
 @dp.message(CommandStart())
 async def start(message: Message):
@@ -74,7 +87,15 @@ async def start(message: Message):
 @dp.callback_query(F.data == "start_reg")
 async def registration(Callback: CallbackQuery, state: FSMContext):
     await state.set_state(Reg.time_input)
-    await callback_query.answer(f"Укажите ваше местоположение на карте(необходимо для корректной работы бота)", reply_markup=pos_select) #нужно реализовать любым образом API Яндекса для выбора местоположения
+    await callback_query.answer(f"Укажите ваш город.\nЕсли Вы живете не в городе, или города, в котором Вы живете, нет, выберите ближайший к вам город из списка.", reply_markup=geoposition)
+    data = callback_query.data
+    gn = geopy.geocoders.GeoNames(username='имя учётной записи')
+    loc = gn.geocode(data)
+    loc_tz = gn.reverse_timezone(loc.point)
+    dt_UTC = datetime(2020, 11, 27, 12, 0, 0, tzinfo=timezone.utc)
+    sutc = dt_UTC.astimezone(loc_tz.pytz_timezone)
+    print(sutc)
+
 
 @dp.callback_query(F.data == "main_menu")
 async def menu(callback: CallbackQuery, state: FSMContext):
@@ -88,8 +109,10 @@ async def plans(message: Message, state: FSMContext):
     con = sqlite3.connect("my_base.db")
     cur = con.cursor()
     sid = message.from_user.id
-    plans_str = cur.execute("""SELECT plans FROM Users WHERE id = ? LIMIT 1""", [sid]).fetchall()
-    await message.answer(f"Вы в меню планов", reply_markup=all_plans if len(plans_str) > 1 else plans_add_solo)
+    plans = cur.execute("""SELECT plans FROM Users WHERE id = ? LIMIT 1""", [sid]).fetchone()
+    plans_str = plans[0]
+    plans_list = plans_str.split("\n") if plans_str else []
+    await message.answer(f"Вы в меню планов", reply_markup=all_plans if len(plans_list) else plans_add_solo)
 
 @dp.callback_query(F.data == "plan_add")
 async def plans_add(callback: CallbackQuery, state: FSMContext):
@@ -97,17 +120,23 @@ async def plans_add(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("Введите ваш план")
 
-async def inline_plans():
+async def inline_plans(sid):
+    con = sqlite3.connect("my_base.db")
+    cursor = con.cursor()
+    result = cursor.execute("SELECT plans FROM Users WHERE id = ?", (sid,)).fetchone()
+    plans_str = result[0]
+    plans_list = plans_str.split("\n") if plans_str else []
     plans_for_del = InlineKeyboardBuilder()
-    for plan in plans_lst:
+    for plan in plans_list:
         plans_for_del.add(InlineKeyboardButton(text=plan, callback_data=f"{plan}"))
     return plans_for_del.adjust(3).as_markup()
     
 @dp.callback_query(F.data == "plan_del")
 async def plans_del(callback: CallbackQuery, state: FSMContext):
+    sid = callback.from_user.id
     await state.set_state(Plans.plan_del)
     await callback.answer()
-    await callback.message.answer("Выберите план для удаления", reply_markup=await inline_plans())
+    await callback.message.answer("Выберите план для удаления", reply_markup=await inline_plans(sid))
     
 @dp.message(Plans.plan_add)
 async def plan_add(message: Message, state: FSMContext):
@@ -135,20 +164,33 @@ async def plan_add(message: Message, state: FSMContext):
     await message.answer("Вы в меню планов", reply_markup=all_plans)
     await state.clear()
 
-@dp.callback_query(Plans.plan_del, lambda call: call.data in plans_lst)
+@dp.callback_query(Plans.plan_del)
 async def plan_del(callback_query: CallbackQuery, state: FSMContext): 
     plan = callback_query.data
-    plans_lst.remove(plan)
+    sid = callback_query.from_user.id
+    con = sqlite3.connect("my_base.db")
+    cursor = con.cursor()
+    plans = cursor.execute("SELECT plans FROM Users WHERE id = ?", (sid,)).fetchone()
+    plans_str = plans[0]
+    plans_list = plans_str.split("\n") if plans_str else []
+    plans_list.remove(plan)
+    new_plans_str = "\n".join(plans_list)
+    cursor.execute("UPDATE Users SET plans = ? WHERE id = ?", (new_plans_str, sid))
+    con.commit()
+    con.close()
+    await state.clear()
     await callback_query.answer()
     await callback_query.message.answer(f"План '{plan}' успешно удалён")
-    await callback_query.message.answer("УРА! Вы выполнили все ваши планы)" if len(plans_lst) == 0 else "Продолжайте выполнять ваши планы")
-    await callback_query.message.answer(f"Вы в меню планов", reply_markup=all_plans if plans_lst else plans_add_solo)
-    await state.clear()
+    await callback_query.message.answer(f"Вы в меню планов", reply_markup=all_plans if plans_list else plans_add_solo)
 
 @dp.callback_query(F.data == "plan_check")
 async def plans_check(callback_query: CallbackQuery):
+    sid = callback_query.from_user.id
+    con = sqlite3.connect("my_base.db")
+    cursor = con.cursor()
+    plans = cursor.execute("SELECT plans FROM Users WHERE id = ?", (sid,)).fetchone()
     await callback_query.answer()
-    await callback_query.message.answer(f"Ваши планы на сегодня:", reply_markup=all_plans)
+    await callback_query.message.answer(f"Ваши планы на сегодня:\n{plans[0]}", reply_markup=all_plans)
     
 @dp.message(F.text == "Календарь")
 async def kallen(message: Message, state: FSMContext):
