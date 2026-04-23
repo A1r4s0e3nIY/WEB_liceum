@@ -4,28 +4,31 @@ import sqlite3
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, FSInputFile, URLInputFile
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
 from geopy import geocoders
+import os
 
 
-bot = Bot("8573629235:AAFkezNHEOOT8ZxsyysACPPmrGu65LwSOwY", proxy="datacloud-tech.org") 
-
+bot = Bot("8573629235:AAFkezNHEOOT8ZxsyysACPPmrGu65LwSOwY") 
 dp = Dispatcher()
-
 chat_id = None
-
 sutc = 0
+photo = URLInputFile("https://rukolor.ru/userfls/shop/large/337/3366518_shtamp-skrapklub--vazhnye-za.jpg", 
+                     filename="my_photo")
+
 
 class Plans(StatesGroup):
     plan_add = State()
     plan_del = State()
 
+
 class Reg(StatesGroup):
     time_input = State()
+
 
 class Kallend(StatesGroup):
     date_add = State()
@@ -38,8 +41,6 @@ morph = pymorphy3.MorphAnalyzer()
 months_dates = {"jan": {}, "feb": {}, "mar": {}, "apr": {}, "may": {}, "jun": {}, "jul": {}, "aug": {}, "sep": {}, "ocr": {}, "nov": {}, "dec": {}}
 months_buttons = {"jan": ["Январь❄", 31, 2026], "feb": ["Февраль❄", 28, 2026], "mar": ["Март🌸", 31, 2026], "apr": ["Апрель🌸", 30, 2025], "may": ["Май🌸", 31, 2025], "jun": ["Июнь☀", 30, 2025],
                   "jul": ["Июль☀", 31, 2025], "aug": ["Август☀", 31, 2025], "sep": ["Сентябрь🍁", 30, 2025], "ocr": ["Октябрь🍁", 31, 2025], "nov": ["Ноябрь🍁", 30, 2025], "dec": ["Декабрь❄", 31, 2025]}
-
-
 main_menu = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Планы на день")], [KeyboardButton(text="Календарь")], [KeyboardButton(text="Профиль")]], resize_keyboard=True)
 start_menu = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть меню", callback_data="main_menu")]])
 start_menu_bt = InlineKeyboardButton(text="Открыть меню 📑 ", callback_data="main_menu")
@@ -78,28 +79,42 @@ async def start(message: Message):
     sname = message.from_user.first_name
     res = cur.execute("""SELECT id FROM Users WHERE id = ? LIMIT 1""", [sid]).fetchall()
     if not res:
-        await message.answer(f"Привет, {message.from_user.first_name}! В этом боте собраны все полезные функции для твоей ежедневной рутины.\nВы не зарегистрированы в системе - начните регистрацию:", reply_markup=start_reg)
+        await message.answer(f"""Привет, {message.from_user.first_name}! 
+                             В этом боте собраны все полезные функции для твоей ежедневной рутины.
+                              \nВы не зарегистрированы в системе - начните регистрацию:""", reply_markup=start_reg)
         result = cur.execute("INSERT INTO Users(id, name) VALUES(?, ?)", [sid, sname])
     else:
-        await message.answer(f"Привет, {message.from_user.first_name}! В этом боте собраны все полезные функции для твоей ежедневной рутины", reply_markup=start_menu)
+        await message.answer(f"""Привет, {message.from_user.first_name}! 
+                             В этом боте собраны все полезные функции для твоей ежедневной рутины""", reply_markup=start_menu)
     con.commit()
     con.close()
 
 @dp.callback_query(F.data == "start_reg")
-async def registration(Callback: CallbackQuery, state: FSMContext):
+async def registration(Callback: CallbackQuery, state: FSMContext, message: Message):
     await state.set_state(Reg.time_input)
-    await callback_query.answer(f"Укажите ваш город.\nЕсли Вы живете не в городе, или города, в котором Вы живете, нет, выберите ближайший к вам город из списка.", reply_markup=geoposition)
+    await callback_query.answer(f"""Укажите ваш город.\nЕсли Вы живете не в городе, или города, в котором Вы живете,
+                                 нет, выберите ближайший к вам город из списка.""", reply_markup=geoposition)
     data = callback_query.data
-    gn = geopy.geocoders.GeoNames(username='имя учётной записи')
+    gn = geocoders.GeoNames(username='имя учётной записи')
     loc = gn.geocode(data)
     loc_tz = gn.reverse_timezone(loc.point)
     dt_UTC = datetime(2020, 11, 27, 12, 0, 0, tzinfo=timezone.utc)
     sutc = (dt_UTC.astimezone(loc_tz.pytz_timezone)) - 4
 
+@dp.message_handler(content_types=['photo'])
+async def handle_photo(message: Message):
+    global photo
+    if not os.path.exists('photos'):
+        os.makedirs('photos')
+    filename = f"photos/user_{message.from_user.id}_{message.from_user.username}.png"
+    await message.photo[-1].download(filename)
+    await message.answer(f"Фото успешно получено и сохранено для добавления в профиль!")
+    photo = FSInputFile(f"photos/user_{message.from_user.id}_{message.from_user.username}.png")
+
 @dp.callback_query(F.data == "main_menu")
 async def menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.answer("Вы в меню")
+    await callback.answer("Вы в меню") 
     await callback.message.answer("Добро пожаловать!", reply_markup=main_menu)
 
 @dp.message(F.text == "Планы на день")
@@ -116,9 +131,14 @@ async def plans(message: Message, state: FSMContext):
 @dp.message(F.text == "Профиль")
 async def plans(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(f"""Ваш профиль:\nИмя: {message.from_user.first_name}\n
+    if photo != None:
+        bot.send_photo(
+    chat_id=chat_id,  # ID чата, куда отправляем
+    photo=photo,
+    caption=f"""Ваш профиль:\nИмя: {message.from_user.first_name}\n
 Фамилия: {message.from_user.last_name}\nUsername: {message.from_user.username}\n
-Часовой пояс(относительно UTC+4): {sutc}""", reply_markup=check_all_dates)
+Часовой пояс(относительно UTC+4): {sutc}""", reply_markup=check_all_dates
+)
 
 @dp.callback_query(F.data == "plan_add")
 async def plans_add(callback: CallbackQuery, state: FSMContext):
@@ -147,13 +167,11 @@ async def plans_del(callback: CallbackQuery, state: FSMContext):
 @dp.message(Plans.plan_add)
 async def plan_add(message: Message, state: FSMContext):
     plan_text = message.text
-    
     con = sqlite3.connect("my_base.db")
     cur = con.cursor()
     sid = message.from_user.id
     cur.execute("SELECT plans FROM Users WHERE id = ?", (sid,))
     result = cur.fetchone()
-
     if result and result[0]:
         current_plans = result[0]
         new_plans = current_plans + "\n" + plan_text #планы пользователя через "\n" 
@@ -202,7 +220,6 @@ async def plans_check(callback_query: CallbackQuery):
 async def kallen(message: Message, state: FSMContext):
     await message.answer("Введите месяц >>>", reply_markup=await set_months())
 
-
 @dp.callback_query(lambda call: call.data in months_buttons)
 async def date_month(callback_query: CallbackQuery, state: FSMContext):
     select_month = callback_query.data
@@ -223,6 +240,7 @@ async def date_num(callback: CallbackQuery, state: FSMContext):
     except NameError:
         await callback.answer()
         await callback.message.answer("Cначала выберите месяц")
+
 @dp.callback_query(lambda call: call.data[-3:] == "add")
 async def date_input_add(callback_query: CallbackQuery, state: FSMContext):
     try:
@@ -318,7 +336,6 @@ async def date_del(callback_query: CallbackQuery, state: FSMContext):
         await callback_query.answer()
         await callback_query.message.answer("Cначала добавьте событие")
 
-    
 @dp.callback_query(F.data == "date_checks")
 async def date_checks(callback_query: CallbackQuery, state: FSMContext):
     last_year = 0
@@ -366,7 +383,6 @@ async def date_checks(callback_query: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "date_change")
 async def date_change(callback_query: CallbackQuery):
     await callback_query.message.answer("Введите месяц >>>", reply_markup=await set_months())
-
 
 async def month_nums(select_month, last_num, com):
     nums = InlineKeyboardBuilder()
