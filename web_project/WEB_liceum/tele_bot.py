@@ -1,6 +1,7 @@
 import asyncio
 import pymorphy3
-import sqlite3
+import os
+import pytz
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton
@@ -8,9 +9,12 @@ from aiogram.types import CallbackQuery, FSInputFile, URLInputFile
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime, timedelta
-from geopy import geocoders
-import os
+from datetime import datetime, timezone, timedelta
+from data import db_session
+from data.users import User
+from data.plans import Plan
+from data.events import Event
+
 
 
 bot = Bot("8573629235:AAFkezNHEOOT8ZxsyysACPPmrGu65LwSOwY") 
@@ -57,51 +61,72 @@ all_dates = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_del], [all
 dates_add_solo = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_change], [start_menu_bt]])
 start_reg = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Начать регистрацию📃", callback_data="start_reg")]])
 geopos_select = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Ваше местоположение❓", callback_data="pos_select")]])
-geoposition = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Калининград", callback_data="Калининград")], 
-                                                    [InlineKeyboardButton(text="Москва", callback_data="Москва")], 
-                                                    [InlineKeyboardButton(text="Самара", callback_data="Самара")], 
-                                                    [InlineKeyboardButton(text="Екатеринбург", callback_data="Екатеринбург")], 
-                                                    [InlineKeyboardButton(text="Омск", callback_data="Омск")], 
-                                                    [InlineKeyboardButton(text="Новосибирск", callback_data="Новосибирск")], 
-                                                    [InlineKeyboardButton(text="Иркутск", callback_data="Иркутск")], 
-                                                    [InlineKeyboardButton(text="Якутск", callback_data="Якутск")], 
-                                                    [InlineKeyboardButton(text="Владивосток", callback_data="Владивосток")], 
-                                                    [InlineKeyboardButton(text="Дружина", callback_data="Дружина")], 
-                                                    [InlineKeyboardButton(text="Петропавловск-Камчатский", callback_data="Петропавловск-Камчатский")]])
+geoposition = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Калининград", callback_data="city_Калининград")], 
+                                                    [InlineKeyboardButton(text="Москва", callback_data="city_Москва")], 
+                                                    [InlineKeyboardButton(text="Самара", callback_data="city_Самара")], 
+                                                    [InlineKeyboardButton(text="Екатеринбург", callback_data="city_Екатеринбург")], 
+                                                    [InlineKeyboardButton(text="Омск", callback_data="city_Омск")], 
+                                                    [InlineKeyboardButton(text="Новосибирск", callback_data="city_Новосибирск")], 
+                                                    [InlineKeyboardButton(text="Иркутск", callback_data="city_Иркутск")], 
+                                                    [InlineKeyboardButton(text="Якутск", callback_data="city_Якутск")], 
+                                                    [InlineKeyboardButton(text="Владивосток", callback_data="city_Владивосток")], 
+                                                    [InlineKeyboardButton(text="Дружина", callback_data="city_Дружина")], 
+                                                    [InlineKeyboardButton(text="Петропавловск-Камчатский", callback_data="city_Петропавловск-Камчатский")]])
 check_all_dates = InlineKeyboardMarkup(inline_keyboard=[[plans_check], [all_checks], [start_menu_bt]])
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    chat_id = message.chat.id
-    con = sqlite3.connect("my_base.db")
-    cur = con.cursor()
-    sid = message.from_user.id
-    sname = message.from_user.first_name
-    res = cur.execute("""SELECT id FROM Users WHERE id = ? LIMIT 1""", [sid]).fetchall()
-    if not res:
-        await message.answer(f"""Привет, {message.from_user.first_name}! 
-                             В этом боте собраны все полезные функции для твоей ежедневной рутины.
-                              \nВы не зарегистрированы в системе - начните регистрацию:""", reply_markup=start_reg)
-        result = cur.execute("INSERT INTO Users(id, name) VALUES(?, ?)", [sid, sname])
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
+
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name
+    print(session.get(User, user_id))
+    if not session.get(User, user_id):
+        await message.answer(f"""Привет, {message.from_user.first_name}!\nВ этом боте собраны все полезные функции для твоей ежедневной рутины.\nВы не зарегистрированы в системе - начните регистрацию:""", reply_markup=start_reg)
     else:
         await message.answer(f"""Привет, {message.from_user.first_name}! 
                              В этом боте собраны все полезные функции для твоей ежедневной рутины""", reply_markup=start_menu)
-    con.commit()
-    con.close()
+    session.commit()
+    session.close()
 
 @dp.callback_query(F.data == "start_reg")
-async def registration(Callback: CallbackQuery, state: FSMContext, message: Message):
+async def registration(callback: CallbackQuery, state: FSMContext):
     await state.set_state(Reg.time_input)
-    await callback_query.answer(f"""Укажите ваш город.\nЕсли Вы живете не в городе, или города, в котором Вы живете,
-                                 нет, выберите ближайший к вам город из списка.""", reply_markup=geoposition)
-    data = callback_query.data
-    gn = geocoders.GeoNames(username='имя учётной записи')
-    loc = gn.geocode(data)
-    loc_tz = gn.reverse_timezone(loc.point)
-    dt_UTC = datetime(2020, 11, 27, 12, 0, 0, tzinfo=timezone.utc)
-    sutc = (dt_UTC.astimezone(loc_tz.pytz_timezone)) - 4
+    await callback.answer()
+    await callback.message.answer("Укажите ваш город.\nЕсли Вы живете не в городе, или города, в котором Вы живете, нет, выберите ближайший к вам город из списка.", reply_markup=geoposition)
+    
+    
+@dp.callback_query(F.data.startswith("city_"))
+async def city_selected(callback: CallbackQuery, state: FSMContext):
+    city_name = callback.data.split("_", 1)[1]
+    
+    city_offsets = {
+        "Калининград": -2,
+        "Москва": -1,
+        "Самара": 0,
+        "Екатеринбург": 1,
+        "Омск": 2,
+        "Новосибирск": 3,
+        "Иркутск": 4,
+        "Якутск": 5,
+        "Владивосток": 6,
+        "Дружина": 7,
+        "Петропавловск-Камчатский": 8
+    }
+    
+    timezone_offset = city_offsets.get(city_name, 3)
+    
+    await callback.answer()
+    
+    session = db_session.create_session()
+    user = User(uid=callback.from_user.id, name=callback.from_user.first_name, time=timezone_offset, city=city_name)
+    session.add(user)
+    
+    session.commit()
+    session.close()
 
-@dp.message_handler(content_types=['photo'])
+@dp.message(F.photo)
 async def handle_photo(message: Message):
     global photo
     if not os.path.exists('photos'):
@@ -129,16 +154,31 @@ async def plans(message: Message, state: FSMContext):
     await message.answer(f"Вы в меню планов", reply_markup=all_plans if len(plans_list) else plans_add_solo)
 
 @dp.message(F.text == "Профиль")
-async def plans(message: Message, state: FSMContext):
+async def profile(message: Message, state: FSMContext):
     await state.clear()
-    if photo != None:
-        bot.send_photo(
-    chat_id=chat_id,  # ID чата, куда отправляем
-    photo=photo,
-    caption=f"""Ваш профиль:\nИмя: {message.from_user.first_name}\n
-Фамилия: {message.from_user.last_name}\nUsername: {message.from_user.username}\n
-Часовой пояс(относительно UTC+4): {sutc}""", reply_markup=check_all_dates
-)
+    chat_id = message.chat.id
+    
+    if photo is not None:
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption=f"""Ваш профиль:
+Имя: {message.from_user.first_name or "Не указано"}
+Фамилия: {message.from_user.last_name or "Не указано"}
+Username: @{message.from_user.username if message.from_user.username else "Не указан"}
+Часовой пояс (относительно UTC+4): {sutc}""",
+            reply_markup=check_all_dates
+        )
+    else:
+        await message.answer(
+            f"""Ваш профиль:
+Имя: {message.from_user.first_name or "Не указано"}
+Фамилия: {message.from_user.last_name or "Не указано"}
+Username: @{message.from_user.username if message.from_user.username else "Не указан"}
+Часовой пояс (относительно UTC+4): {sutc}
+
+💡 Отправьте фото, чтобы добавить его в профиль!""")
+
 
 @dp.callback_query(F.data == "plan_add")
 async def plans_add(callback: CallbackQuery, state: FSMContext):
