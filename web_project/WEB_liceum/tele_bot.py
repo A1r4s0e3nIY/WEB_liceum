@@ -15,23 +15,23 @@ from data.users import User
 from data.plans import Plan
 from data.events import Event
 
-
+os.makedirs("images_dir", exist_ok=True)
 
 bot = Bot("8573629235:AAFkezNHEOOT8ZxsyysACPPmrGu65LwSOwY") 
 dp = Dispatcher()
 chat_id = None
-sutc = 0
-photo = URLInputFile("https://rukolor.ru/userfls/shop/large/337/3366518_shtamp-skrapklub--vazhnye-za.jpg", 
-                     filename="my_photo")
 
 
 class Plans(StatesGroup):
     plan_add = State()
     plan_del = State()
 
-
 class Reg(StatesGroup):
     time_input = State()
+
+class Profile(StatesGroup):
+    photo = State()
+    timexone = State()
 
 
 class Kallend(StatesGroup):
@@ -45,34 +45,36 @@ morph = pymorphy3.MorphAnalyzer()
 months_dates = {"jan": {}, "feb": {}, "mar": {}, "apr": {}, "may": {}, "jun": {}, "jul": {}, "aug": {}, "sep": {}, "ocr": {}, "nov": {}, "dec": {}}
 months_buttons = {"jan": ["Январь❄", 31, 2026], "feb": ["Февраль❄", 28, 2026], "mar": ["Март🌸", 31, 2026], "apr": ["Апрель🌸", 30, 2025], "may": ["Май🌸", 31, 2025], "jun": ["Июнь☀", 30, 2025],
                   "jul": ["Июль☀", 31, 2025], "aug": ["Август☀", 31, 2025], "sep": ["Сентябрь🍁", 30, 2025], "ocr": ["Октябрь🍁", 31, 2025], "nov": ["Ноябрь🍁", 30, 2025], "dec": ["Декабрь❄", 31, 2025]}
-main_menu = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Планы на день")], [KeyboardButton(text="Календарь")], [KeyboardButton(text="Профиль")]], resize_keyboard=True)
+main_menu = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Профиль")], [KeyboardButton(text="Планы на день")], [KeyboardButton(text="Календарь")]], resize_keyboard=True)
+change_photo = InlineKeyboardButton(text="Установить новую картинку в профиле", callback_data="change_photo")
+change_timezone = InlineKeyboardButton(text="Сменить часовой пояс", callback_data="start_reg")
 start_menu = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть меню", callback_data="main_menu")]])
 start_menu_bt = InlineKeyboardButton(text="Открыть меню 📑 ", callback_data="main_menu")
 plans_add = InlineKeyboardButton(text="Добавить план✅ ", callback_data="plan_add")
 plans_del = InlineKeyboardButton(text="Удалить план❌ ", callback_data="plan_del")
 plans_check = InlineKeyboardButton(text="Посмотреть план 👀 ", callback_data="plan_check")
-all_plans = InlineKeyboardMarkup(inline_keyboard=[[plans_add], [plans_del], [plans_check], [start_menu_bt]])
-plans_add_solo = InlineKeyboardMarkup(inline_keyboard=[[plans_add], [start_menu_bt]])
 dates_add = InlineKeyboardButton(text="Добавить дату✅ ", callback_data="date_add")
 dates_del = InlineKeyboardButton(text="Удалить дату❌ ", callback_data="date_del")
 all_checks = InlineKeyboardButton(text="Посмотреть все даты 👀", callback_data="date_checks")
 dates_change = InlineKeyboardButton(text="Изменить месяц↩ ", callback_data="date_change")
-all_dates = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_del], [all_checks], [dates_change], [start_menu_bt]])
-dates_add_solo = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_change], [start_menu_bt]])
 start_reg = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Начать регистрацию📃", callback_data="start_reg")]])
 geopos_select = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Ваше местоположение❓", callback_data="pos_select")]])
-geoposition = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Калининград", callback_data="city_Калининград")], 
-                                                    [InlineKeyboardButton(text="Москва", callback_data="city_Москва")], 
-                                                    [InlineKeyboardButton(text="Самара", callback_data="city_Самара")], 
-                                                    [InlineKeyboardButton(text="Екатеринбург", callback_data="city_Екатеринбург")], 
-                                                    [InlineKeyboardButton(text="Омск", callback_data="city_Омск")], 
-                                                    [InlineKeyboardButton(text="Новосибирск", callback_data="city_Новосибирск")], 
-                                                    [InlineKeyboardButton(text="Иркутск", callback_data="city_Иркутск")], 
-                                                    [InlineKeyboardButton(text="Якутск", callback_data="city_Якутск")], 
-                                                    [InlineKeyboardButton(text="Владивосток", callback_data="city_Владивосток")], 
-                                                    [InlineKeyboardButton(text="Дружина", callback_data="city_Дружина")], 
-                                                    [InlineKeyboardButton(text="Петропавловск-Камчатский", callback_data="city_Петропавловск-Камчатский")]])
-check_all_dates = InlineKeyboardMarkup(inline_keyboard=[[plans_check], [all_checks], [start_menu_bt]])
+geoposition = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Калининград(МСК-1)", callback_data="city_Калининград(МСК-1)")], 
+                                                    [InlineKeyboardButton(text="Москва(МСК+0)", callback_data="city_Москва(МСК+0)")], 
+                                                    [InlineKeyboardButton(text="Самара(МСК+1)", callback_data="city_Самара(МСК+1)")], 
+                                                    [InlineKeyboardButton(text="Екатеринбург(МСК+2)", callback_data="city_Екатеринбург(МСК+2)")], 
+                                                    [InlineKeyboardButton(text="Омск(МСК+3)", callback_data="city_Омск(МСК+3)")], 
+                                                    [InlineKeyboardButton(text="Новосибирск(МСК+4)", callback_data="city_Новосибирск(МСК+4)")], 
+                                                    [InlineKeyboardButton(text="Иркутск(МСК+5)", callback_data="city_Иркутск(МСК+5)")], 
+                                                    [InlineKeyboardButton(text="Якутск(МСК+6)", callback_data="city_Якутск(МСК+6)")], 
+                                                    [InlineKeyboardButton(text="Владивосток(МСК+7)", callback_data="city_Владивосток(МСК+7)")], 
+                                                    [InlineKeyboardButton(text="Дружина(МСК+8)", callback_data="city_Дружина(МСК+8)")], 
+                                                    [InlineKeyboardButton(text="Петропавловск-Камчатский(МСК+9)", callback_data="city_Петропавловск-Камчатский(МСК+9)")]])
+all_plans = InlineKeyboardMarkup(inline_keyboard=[[plans_add], [plans_del], [plans_check], [start_menu_bt]])
+plans_add_solo = InlineKeyboardMarkup(inline_keyboard=[[plans_add], [start_menu_bt]])
+all_dates = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_del], [all_checks], [dates_change], [start_menu_bt]])
+dates_add_solo = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_change], [start_menu_bt]])
+check_profile = InlineKeyboardMarkup(inline_keyboard=[[change_timezone], [change_photo]])
 
 @dp.message(CommandStart())
 async def start(message: Message):
@@ -81,7 +83,6 @@ async def start(message: Message):
 
     user_id = message.from_user.id
     user_name = message.from_user.first_name
-    print(session.get(User, user_id))
     if not session.get(User, user_id):
         await message.answer(f"""Привет, {message.from_user.first_name}!\nВ этом боте собраны все полезные функции для твоей ежедневной рутины.\nВы не зарегистрированы в системе - начните регистрацию:""", reply_markup=start_reg)
     else:
@@ -99,42 +100,90 @@ async def registration(callback: CallbackQuery, state: FSMContext):
     
 @dp.callback_query(F.data.startswith("city_"))
 async def city_selected(callback: CallbackQuery, state: FSMContext):
-    city_name = callback.data.split("_", 1)[1]
-    
+    db_session.global_init("db/my_base.db")
+    user_id = callback.from_user.id
+    city_name = callback.data.split("_")[1]
     city_offsets = {
-        "Калининград": -2,
-        "Москва": -1,
-        "Самара": 0,
-        "Екатеринбург": 1,
-        "Омск": 2,
-        "Новосибирск": 3,
-        "Иркутск": 4,
-        "Якутск": 5,
-        "Владивосток": 6,
-        "Дружина": 7,
-        "Петропавловск-Камчатский": 8
+        "Калининград(МСК-1)": -2,
+        "Москва(МСК+0)": -1,
+        "Самара(МСК+1)": 0,
+        "Екатеринбург(МСК+2)": 1,
+        "Омск(МСК+3)": 2,
+        "Новосибирск(МСК+4)": 3,
+        "Иркутск(МСК+5)": 4,
+        "Якутск(МСК+6)": 5,
+        "Владивосток(МСК+7)": 6,
+        "Дружина(МСК+8)": 7,
+        "Петропавловск-Камчатский(МСК+9)": 8
     }
-    
-    timezone_offset = city_offsets.get(city_name, 3)
+    timezone_offset = city_offsets.get(city_name)
     
     await callback.answer()
     
     session = db_session.create_session()
-    user = User(uid=callback.from_user.id, name=callback.from_user.first_name, time=timezone_offset, city=city_name)
-    session.add(user)
-    
-    session.commit()
+    user = session.query(User).filter(User.uid == user_id).first()
+    if user:
+        user.city = city_name
+        user.time = timezone_offset
+        session.commit()
+        await callback.message.answer("Вы успешно сменили часовой пояс", reply_markup=main_menu)
+    else:
+        user = User(uid=callback.from_user.id, name=callback.from_user.first_name, time=timezone_offset, city=city_name)
+        session.add(user)
+        session.commit()
+        await callback.message.answer("Добро пожаловать!", reply_markup=main_menu)
+
     session.close()
 
-@dp.message(F.photo)
-async def handle_photo(message: Message):
-    global photo
-    if not os.path.exists('photos'):
-        os.makedirs('photos')
-    filename = f"photos/user_{message.from_user.id}_{message.from_user.username}.png"
-    await message.photo[-1].download(filename)
-    await message.answer(f"Фото успешно получено и сохранено для добавления в профиль!")
-    photo = FSInputFile(f"photos/user_{message.from_user.id}_{message.from_user.username}.png")
+@dp.message(F.text == "Профиль")
+async def profile(message: Message):
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
+    user_id = message.from_user.id
+    user = session.query(User).filter(User.uid == user_id).first()
+    if not user:
+        await message.answer("❌ Вы не зарегистрированы! Нажмите /start")
+        session.close()
+        return
+    
+    city = user.city
+    name = user.name
+    avatar_path = os.path.join("images_dir", f"{user_id}.jpg")  # ✅ исправлено
+    
+    if os.path.exists(avatar_path):
+        photo = FSInputFile(avatar_path)
+        await message.answer_photo(
+            photo=photo,
+            caption=f"""📱 Ваш профиль:\n👤 Имя: {name or "Не указано"}\n🌍 Часовой пояс: {city}""",
+            reply_markup=check_profile
+        )
+    else:
+        await message.answer(
+            f"""📱 Ваш профиль:\n👤 Имя: {name or "Не указано"}\n🌍 Часовой пояс: {city}\n\n📸 У вас нет фото профиля. Нажмите «Сменить картинку», чтобы добавить.""",
+            reply_markup=check_profile
+        )
+    
+    session.close()
+
+@dp.callback_query(F.data == "change_photo")
+async def change_photo_callback(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(Profile.photo)
+    await callback.answer()
+    await callback.message.answer("📸 Отправьте новое фото для вашего профиля")
+
+@dp.message(Profile.photo, F.photo)
+async def save_profile_photo(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    photo = message.photo[-1]
+    file = await bot.get_file(photo.file_id)
+    avatar_path = os.path.join("images_dir", f"{user_id}.jpg")
+    await bot.download_file(file.file_path, avatar_path)
+    
+    await message.answer("✅ Фото профиля успешно обновлено!")
+    await state.clear()
+
+
+
 
 @dp.callback_query(F.data == "main_menu")
 async def menu(callback: CallbackQuery, state: FSMContext):
@@ -145,40 +194,16 @@ async def menu(callback: CallbackQuery, state: FSMContext):
 @dp.message(F.text == "Планы на день")
 async def plans(message: Message, state: FSMContext):
     await state.clear()
-    con = sqlite3.connect("my_base.db")
-    cur = con.cursor()
-    sid = message.from_user.id
-    plans = cur.execute("""SELECT plans FROM Users WHERE id = ? LIMIT 1""", [sid]).fetchone()
-    plans_str = plans[0]
-    plans_list = plans_str.split("\n") if plans_str else []
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
+    plans_list = []
+    user_id = message.from_user.id
+    for plan in session.query(Plan).filter(Plan.user_id):
+        plans_list.append(plan.text)
     await message.answer(f"Вы в меню планов", reply_markup=all_plans if len(plans_list) else plans_add_solo)
 
-@dp.message(F.text == "Профиль")
-async def profile(message: Message, state: FSMContext):
-    await state.clear()
-    chat_id = message.chat.id
-    
-    if photo is not None:
-        await bot.send_photo(
-            chat_id=chat_id,
-            photo=photo,
-            caption=f"""Ваш профиль:
-Имя: {message.from_user.first_name or "Не указано"}
-Фамилия: {message.from_user.last_name or "Не указано"}
-Username: @{message.from_user.username if message.from_user.username else "Не указан"}
-Часовой пояс (относительно UTC+4): {sutc}""",
-            reply_markup=check_all_dates
-        )
-    else:
-        await message.answer(
-            f"""Ваш профиль:
-Имя: {message.from_user.first_name or "Не указано"}
-Фамилия: {message.from_user.last_name or "Не указано"}
-Username: @{message.from_user.username if message.from_user.username else "Не указан"}
-Часовой пояс (относительно UTC+4): {sutc}
-
-💡 Отправьте фото, чтобы добавить его в профиль!""")
-
+    session.commit()
+    session.close()
 
 @dp.callback_query(F.data == "plan_add")
 async def plans_add(callback: CallbackQuery, state: FSMContext):
