@@ -182,9 +182,6 @@ async def save_profile_photo(message: Message, state: FSMContext):
     await message.answer("✅ Фото профиля успешно обновлено!")
     await state.clear()
 
-
-
-
 @dp.callback_query(F.data == "main_menu")
 async def menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -198,7 +195,7 @@ async def plans(message: Message, state: FSMContext):
     session = db_session.create_session()
     plans_list = []
     user_id = message.from_user.id
-    for plan in session.query(Plan).filter(Plan.user_id):
+    for plan in session.query(Plan).filter(Plan.user_id == user_id):
         plans_list.append(plan.text)
     await message.answer(f"Вы в меню планов", reply_markup=all_plans if len(plans_list) else plans_add_solo)
 
@@ -211,75 +208,64 @@ async def plans_add(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("Введите ваш план")
 
-async def inline_plans(sid):
-    con = sqlite3.connect("my_base.db")
-    cursor = con.cursor()
-    result = cursor.execute("SELECT plans FROM Users WHERE id = ?", (sid,)).fetchone()
-    plans_str = result[0]
-    plans_list = plans_str.split("\n") if plans_str else []
-    plans_for_del = InlineKeyboardBuilder()
-    for plan in plans_list:
-        plans_for_del.add(InlineKeyboardButton(text=plan, callback_data=f"{plan}"))
-    return plans_for_del.adjust(3).as_markup()
+async def inline_plans(user_id):
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
+    plans_for_sth  = InlineKeyboardBuilder()
+    for plan in session.query(Plan).filter(Plan.user_id == user_id):
+        plans_for_sth.add(InlineKeyboardButton(text=plan.text, callback_data=f"{plan.text}"))
+    return plans_for_sth.adjust(3).as_markup()
     
 @dp.callback_query(F.data == "plan_del")
 async def plans_del(callback: CallbackQuery, state: FSMContext):
-    sid = callback.from_user.id
+    user_id = callback.from_user.id
     await state.set_state(Plans.plan_del)
     await callback.answer()
-    await callback.message.answer("Выберите план для удаления", reply_markup=await inline_plans(sid))
+    await callback.message.answer("Выберите план для удаления", reply_markup=await inline_plans(user_id))
     
 @dp.message(Plans.plan_add)
 async def plan_add(message: Message, state: FSMContext):
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
     plan_text = message.text
-    con = sqlite3.connect("my_base.db")
-    cur = con.cursor()
-    sid = message.from_user.id
-    cur.execute("SELECT plans FROM Users WHERE id = ?", (sid,))
-    result = cur.fetchone()
-    if result and result[0]:
-        current_plans = result[0]
-        new_plans = current_plans + "\n" + plan_text #планы пользователя через "\n" 
-    else:
-        new_plans = plan_text
-    cur.execute("""
-        UPDATE Users 
-        SET plans = ? 
-        WHERE id = ?
-    """, (new_plans, sid)) #обновление списка планов
-    con.commit()
-    con.close()
-    await message.answer(f"План '{plan_text}' успешно добавлен")
+    user_id = message.from_user.id
+    plan = Plan(user_id=user_id, text=plan_text)
+    session.add(plan)
+    await message.answer(f"План успешно добавлен")
     await message.answer("Вы в меню планов", reply_markup=all_plans)
     await state.clear()
+    session.commit()
+    session.close()
 
 @dp.callback_query(Plans.plan_del)
 async def plan_del(callback_query: CallbackQuery, state: FSMContext): 
-    plan = callback_query.data
-    sid = callback_query.from_user.id
-    con = sqlite3.connect("my_base.db")
-    cursor = con.cursor()
-    plans = cursor.execute("SELECT plans FROM Users WHERE id = ?", (sid,)).fetchone()
-    plans_str = plans[0]
-    plans_list = plans_str.split("\n") if plans_str else []
-    plans_list.remove(plan)
-    new_plans_str = "\n".join(plans_list)
-    cursor.execute("UPDATE Users SET plans = ? WHERE id = ?", (new_plans_str, sid))
-    con.commit()
-    con.close()
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
+    user_id = callback_query.from_user.id
+    plan_text = callback_query.data
+    plan = session.query(Plan).filter(Plan.user_id == user_id, Plan.text == plan_text).first()
+    session.delete(plan)
+    plans_list = []
+    for plan in session.query(Plan).filter(Plan.user_id == user_id):
+        plans_list.append(plan.text)
     await state.clear()
     await callback_query.answer()
-    await callback_query.message.answer(f"План '{plan}' успешно удалён")
+    await callback_query.message.answer(f"План успешно удалён")
     await callback_query.message.answer(f"Вы в меню планов", reply_markup=all_plans if plans_list else plans_add_solo)
+    session.commit()
+    session.close()
 
 @dp.callback_query(F.data == "plan_check")
 async def plans_check(callback_query: CallbackQuery):
-    sid = callback_query.from_user.id
-    con = sqlite3.connect("my_base.db")
-    cursor = con.cursor()
-    plans = cursor.execute("SELECT plans FROM Users WHERE id = ?", (sid,)).fetchone()
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
+    user_id = callback_query.from_user.id
+    plans_list = []
+    for plan in session.query(Plan).filter(Plan.user_id == user_id):
+        plans_list.append(plan.text)
+    print(plans_list)
     await callback_query.answer()
-    await callback_query.message.answer(f"Ваши планы на сегодня:\n{plans[0]}", reply_markup=all_plans)
+    await callback_query.message.answer(f"Ваши планы на сегодня:\n{"\n".join(plans_list)}", reply_markup=all_plans)
     
 @dp.message(F.text == "Календарь")
 async def kallen(message: Message, state: FSMContext):
