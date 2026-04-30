@@ -9,7 +9,8 @@ from aiogram.types import CallbackQuery, FSInputFile, URLInputFile
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
+from calendar import monthrange
 from data import db_session
 from data.users import User
 from data.plans import Plan
@@ -33,7 +34,6 @@ class Profile(StatesGroup):
     photo = State()
     timexone = State()
 
-
 class Kallend(StatesGroup):
     date_add = State()
     date_del = State()
@@ -42,9 +42,8 @@ class Kallend(StatesGroup):
     time_check = State()
 
 morph = pymorphy3.MorphAnalyzer()
-months_dates = {"jan": {}, "feb": {}, "mar": {}, "apr": {}, "may": {}, "jun": {}, "jul": {}, "aug": {}, "sep": {}, "ocr": {}, "nov": {}, "dec": {}}
-months_buttons = {"jan": ["Январь❄", 31, 2026], "feb": ["Февраль❄", 28, 2026], "mar": ["Март🌸", 31, 2026], "apr": ["Апрель🌸", 30, 2025], "may": ["Май🌸", 31, 2025], "jun": ["Июнь☀", 30, 2025],
-                  "jul": ["Июль☀", 31, 2025], "aug": ["Август☀", 31, 2025], "sep": ["Сентябрь🍁", 30, 2025], "ocr": ["Октябрь🍁", 31, 2025], "nov": ["Ноябрь🍁", 30, 2025], "dec": ["Декабрь❄", 31, 2025]}
+months_buttons = {"dec": ["Декабрь❄", 12], "jan": ["Январь❄", 1], "feb": ["Февраль❄", 2], "mar": ["Март🌸", 3], "apr": ["Апрель🌸", 4], "may": ["Май🌸", 5], 
+                "jun": ["Июнь☀", 6],"jul": ["Июль☀", 7], "aug": ["Август☀", 8], "sep": ["Сентябрь🍁", 9], "oct": ["Октябрь🍁", 10], "nov": ["Ноябрь🍁", 11]}
 main_menu = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Профиль")], [KeyboardButton(text="Планы на день")], [KeyboardButton(text="Календарь")]], resize_keyboard=True)
 change_photo = InlineKeyboardButton(text="Установить новую картинку в профиле", callback_data="change_photo")
 change_timezone = InlineKeyboardButton(text="Сменить часовой пояс", callback_data="start_reg")
@@ -64,17 +63,22 @@ geoposition = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="
                                                     [InlineKeyboardButton(text="Самара(МСК+1)", callback_data="city_Самара(МСК+1)")], 
                                                     [InlineKeyboardButton(text="Екатеринбург(МСК+2)", callback_data="city_Екатеринбург(МСК+2)")], 
                                                     [InlineKeyboardButton(text="Омск(МСК+3)", callback_data="city_Омск(МСК+3)")], 
-                                                    [InlineKeyboardButton(text="Новосибирск(МСК+4)", callback_data="city_Новосибирск(МСК+4)")], 
+                                                    [InlineKeyboardButton(text="Новосибирск(МСК+4)", callback_data="city_Новосибирск(МСК+4)")],
+                                                    [InlineKeyboardButton(text="Красноярск(МСК+4)", callback_data="city_Красноярск(МСК+4)")], 
                                                     [InlineKeyboardButton(text="Иркутск(МСК+5)", callback_data="city_Иркутск(МСК+5)")], 
                                                     [InlineKeyboardButton(text="Якутск(МСК+6)", callback_data="city_Якутск(МСК+6)")], 
-                                                    [InlineKeyboardButton(text="Владивосток(МСК+7)", callback_data="city_Владивосток(МСК+7)")], 
-                                                    [InlineKeyboardButton(text="Дружина(МСК+8)", callback_data="city_Дружина(МСК+8)")], 
-                                                    [InlineKeyboardButton(text="Петропавловск-Камчатский(МСК+9)", callback_data="city_Петропавловск-Камчатский(МСК+9)")]])
+                                                    [InlineKeyboardButton(text="Владивосток(МСК+7)", callback_data="city_Владивосток(МСК+7)")],
+                                                    [InlineKeyboardButton(text="Магадан(МСК+8)", callback_data="city_Магадан(МСК+8)")], 
+                                                    [InlineKeyboardButton(text="Анадырь(МСК+9)", callback_data="city_Анадырь(МСК+9)")]])
 all_plans = InlineKeyboardMarkup(inline_keyboard=[[plans_add], [plans_del], [plans_check], [start_menu_bt]])
 plans_add_solo = InlineKeyboardMarkup(inline_keyboard=[[plans_add], [start_menu_bt]])
 all_dates = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_del], [all_checks], [dates_change], [start_menu_bt]])
 dates_add_solo = InlineKeyboardMarkup(inline_keyboard=[[dates_add], [dates_change], [start_menu_bt]])
 check_profile = InlineKeyboardMarkup(inline_keyboard=[[change_timezone], [change_photo]])
+city_offsets = {"Калининград(МСК-1)":"Europe/Kaliningrad", "Москва(МСК+0)": "Europe/Moscow", "Самара(МСК+1)": "Europe/Samara",
+    "Екатеринбург(МСК+2)": "Asia/Yekaterinburg", "Омск(МСК+3)": "Asia/Omsk", "Новосибирск(МСК+4)": "Asia/Novosibirsk",
+    "Красноярск(МСК+4)": "Asia/Krasnoyarsk", "Иркутск(МСК+5)": "Asia/Irkutsk", "Якутск(МСК+6)": "Asia/Yakutsk",
+    "Владивосток(МСК+7)": "Asia/Vladivostok", "Магадан(МСК+8)": "Asia/Magadan", "Анадырь(МСК+9)": "Asia/Anadyr"}
 
 @dp.message(CommandStart())
 async def start(message: Message):
@@ -97,26 +101,13 @@ async def registration(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.answer("Укажите ваш город.\nЕсли Вы живете не в городе, или города, в котором Вы живете, нет, выберите ближайший к вам город из списка.", reply_markup=geoposition)
     
-    
 @dp.callback_query(F.data.startswith("city_"))
 async def city_selected(callback: CallbackQuery, state: FSMContext):
     db_session.global_init("db/my_base.db")
     user_id = callback.from_user.id
     city_name = callback.data.split("_")[1]
-    city_offsets = {
-        "Калининград(МСК-1)": -2,
-        "Москва(МСК+0)": -1,
-        "Самара(МСК+1)": 0,
-        "Екатеринбург(МСК+2)": 1,
-        "Омск(МСК+3)": 2,
-        "Новосибирск(МСК+4)": 3,
-        "Иркутск(МСК+5)": 4,
-        "Якутск(МСК+6)": 5,
-        "Владивосток(МСК+7)": 6,
-        "Дружина(МСК+8)": 7,
-        "Петропавловск-Камчатский(МСК+9)": 8
-    }
-    timezone_offset = city_offsets.get(city_name)
+
+    timezone_offset = city_offsets[city_name]
     
     await callback.answer()
     
@@ -124,11 +115,11 @@ async def city_selected(callback: CallbackQuery, state: FSMContext):
     user = session.query(User).filter(User.uid == user_id).first()
     if user:
         user.city = city_name
-        user.time = timezone_offset
+        user.timezone = timezone_offset
         session.commit()
         await callback.message.answer("Вы успешно сменили часовой пояс", reply_markup=main_menu)
     else:
-        user = User(uid=callback.from_user.id, name=callback.from_user.first_name, time=timezone_offset, city=city_name)
+        user = User(uid=callback.from_user.id, name=callback.from_user.first_name, timezone=timezone_offset, city=city_name)
         session.add(user)
         session.commit()
         await callback.message.answer("Добро пожаловать!", reply_markup=main_menu)
@@ -263,28 +254,67 @@ async def plans_check(callback_query: CallbackQuery):
     plans_list = []
     for plan in session.query(Plan).filter(Plan.user_id == user_id):
         plans_list.append(plan.text)
-    print(plans_list)
     await callback_query.answer()
     await callback_query.message.answer(f"Ваши планы на сегодня:\n{"\n".join(plans_list)}", reply_markup=all_plans)
+
+    session.commit()
+    session.close()
     
 @dp.message(F.text == "Календарь")
 async def kallen(message: Message, state: FSMContext):
-    await message.answer("Введите месяц >>>", reply_markup=await set_months())
+    await message.answer("Выберите месяц >>>", reply_markup=await set_months())
+
+async def set_months():
+    months = InlineKeyboardBuilder()
+    for month in months_buttons:
+        months.add(InlineKeyboardButton(text=months_buttons[month][0], callback_data=f"{month}"))
+    months.add(start_menu_bt)
+    return months.adjust(3).as_markup()
 
 @dp.callback_query(lambda call: call.data in months_buttons)
 async def date_month(callback_query: CallbackQuery, state: FSMContext):
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
     select_month = callback_query.data
+    month_num = months_buttons[select_month][1]
+    month_name = months_buttons[select_month][0]
+    user_id = callback_query.from_user.id
+    user = session.query(User).filter(User.uid == user_id).first()
+    timezone = user.timezone
+
+    user_tz = pytz.timezone(timezone)
+    now_user = datetime.now(user_tz)
+    current_year = now_user.year
+    current_month = now_user.month
+    current_day = now_user.day
+    year_num = current_year
+    last_day = monthrange(year_num, month_num)[1]
+    last_day_of_month = datetime(year_num, month_num, last_day, 23, 59, 59, tzinfo=user_tz)
+
+    if (year_num < current_year) or \
+       (year_num == current_year and month_num < current_month) or \
+       (year_num == current_year and month_num == current_month and current_day >= last_day):
+        if month_num == 12:
+            month_num = 1
+            year_num = year_num + 1
+        else:
+            month_num = month_num + 1
+            year_num = year_num + 1
+    events_list = []
+    for event in session.query(Event).filter(Event.user_id == user_id, Event.year == year_num, Event.month == month_num):
+        events_list.append(event.text)
     await state.set_state(Kallend.date_check)
-    await state.update_data(month=select_month)
+    await state.update_data(month=month_num, year=year_num)
     await callback_query.answer()
-    await callback_query.message.answer(f"Ваши события на {" ".join([str(i) for i in months_buttons[select_month][::2]])} года", reply_markup=all_dates if months_dates[select_month] else dates_add_solo)
+    await callback_query.message.answer(f"Ваши события на {month_name} {year_num} года", reply_markup=all_dates if events_list else dates_add_solo)
+
+    session.commit()
+    session.close()
 
 @dp.callback_query(F.data == "date_add")
 async def date_num(callback: CallbackQuery, state: FSMContext):
     try:
         month = await state.get_data()
-        if not month:
-            month = months_data
         select_month = month.get("month")[:3]
         await callback.answer()
         await callback.message.answer(f"Выберите число {morph.parse(months_buttons[select_month][0][:-1])[0].inflect({'NOUN', 'gent'}).word.capitalize()} {months_buttons[select_month][2]} года", reply_markup=await month_nums(select_month, months_buttons[select_month][1], "add"))
@@ -296,8 +326,6 @@ async def date_num(callback: CallbackQuery, state: FSMContext):
 async def date_input_add(callback_query: CallbackQuery, state: FSMContext):
     try:
         month = await state.get_data()
-        if not month:
-            month = months_data
         select_month = month.get("month")[:3]
         num = callback_query.data[3:-3]
         await state.update_data(month=str(select_month) + str(num))
@@ -318,8 +346,7 @@ async def date_input_add(callback_query: CallbackQuery, state: FSMContext):
     
 @dp.message(Kallend.date_add)
 async def date_add(message: Message, state: FSMContext):
-    global chat_id
-    chat_id = message.chat.id
+    user_id = message.from_user.id
     await state.update_data(event=message.text)
     data = await state.get_data()
     year = data.get("year")
@@ -459,59 +486,8 @@ async def date_checker():
     for plan in plans_lst:
         plans1.add(InlineKeyboardButton(text=plan, callback_data=f"{plan}"))
     return plans1.adjust(3).as_markup()
-
-async def set_months():
-    months = InlineKeyboardBuilder()
-    months.add(InlineKeyboardButton(text=months_buttons["dec"][0], callback_data=f"dec"))
-    december = months_buttons.pop("dec")
-    for month in months_buttons:
-        months.add(InlineKeyboardButton(text=months_buttons[month][0], callback_data=f"{month}"))
-    months.add(start_menu_bt)
-    for month in months_buttons:
-        if len(months_dates[month]) != 0:
-            months.add(all_checks)
-            break
-    months_buttons["dec"] = december
-    return months.adjust(3).as_markup()
-
-async def notify_users():
-    while True:
-        if any(months_dates.values()):
-            today = datetime.now()
-            for month in months_dates:
-                for num in months_dates[month]:
-                    for event in months_dates[month][num][0]:
-                        event_date = datetime(year=months_dates[month][num][1], month=list(months_buttons.keys()).index(month.lower()) + 1, day=int(num))
-                        if (event_date - today).total_seconds() / 60 <= 0:
-                            try:
-                                await bot.send_message(chat_id=chat_id, text=f"Наступило событие: {event}")
-                                months_dates[month][num][1] += 1
-                            except Exception as e:
-                                await bot.send_message(chat_id=chat_id, text="Пройдите регистрацию для получения уведомлений /reg")
-            await asyncio.sleep(300)
-        else:
-            await asyncio.sleep(30)
-
-async def change_year():
-    while True:
-        today = datetime.now()
-        for month in months_buttons:
-            month_date = datetime(year=months_buttons[month][2], month=list(months_buttons.keys()).index(month) + 1, day=months_buttons[month][1])
-            if (today - month_date).days >= 1:
-                months_buttons[month][2] += 1
-        await asyncio.sleep(86400)
-
-async def change_feb():
-    if datetime.now().year % 4 == 0:
-        months_buttons["feb"][1] = 29
-    else:
-        if 29 in months_dates["feb"]:
-            months_dates["feb"].pop(29)
-    asyncio.sleep(86400)
                  
 async def main():
-    asyncio.create_task(change_year())
-    asyncio.create_task(notify_users())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

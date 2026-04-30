@@ -8,5 +8,5 @@ class User(SqlAlchemyBase):
 
     uid = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     name = sqlalchemy.Column(sqlalchemy.String, nullable=True)
-    time = sqlalchemy.Column(sqlalchemy.Integer, nullable=True)
+    timezone = sqlalchemy.Column(sqlalchemy.String, nullable=True)
     city = sqlalchemy.Column(sqlalchemy.String, nullable=True)
