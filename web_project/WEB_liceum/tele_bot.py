@@ -42,8 +42,8 @@ class Kallend(StatesGroup):
     time_check = State()
 
 morph = pymorphy3.MorphAnalyzer()
-months_buttons = {"dec": ["Декабрь❄", 12], "jan": ["Январь❄", 1], "feb": ["Февраль❄", 2], "mar": ["Март🌸", 3], "apr": ["Апрель🌸", 4], "may": ["Май🌸", 5], 
-                "jun": ["Июнь☀", 6],"jul": ["Июль☀", 7], "aug": ["Август☀", 8], "sep": ["Сентябрь🍁", 9], "oct": ["Октябрь🍁", 10], "nov": ["Ноябрь🍁", 11]}
+months_buttons = {"dec": ["Декабрь❄", 12, 31], "jan": ["Январь❄", 1, 31], "feb": ["Февраль❄", 2, 28], "mar": ["Март🌸", 3, 31], "apr": ["Апрель🌸", 4, 30], "may": ["Май🌸", 5, 31], 
+                "jun": ["Июнь☀", 6, 30],"jul": ["Июль☀", 7, 31], "aug": ["Август☀", 8, 31], "sep": ["Сентябрь🍁", 9, 30], "oct": ["Октябрь🍁", 10, 31], "nov": ["Ноябрь🍁", 11, 30]}
 main_menu = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Профиль")], [KeyboardButton(text="Планы на день")], [KeyboardButton(text="Календарь")]], resize_keyboard=True)
 change_photo = InlineKeyboardButton(text="Установить новую картинку в профиле", callback_data="change_photo")
 change_timezone = InlineKeyboardButton(text="Сменить часовой пояс", callback_data="start_reg")
@@ -275,10 +275,21 @@ async def set_months():
 async def date_month(callback_query: CallbackQuery, state: FSMContext):
     db_session.global_init("db/my_base.db")
     session = db_session.create_session()
-    select_month = callback_query.data
-    month_num = months_buttons[select_month][1]
-    month_name = months_buttons[select_month][0]
     user_id = callback_query.from_user.id
+    month_data = callback_query.data
+    month_name = months_buttons[callback_query.data][0]
+    month_num = months_buttons[callback_query.data][1]
+    events_list = []
+    for event in session.query(Event).filter(Event.user_id == user_id, Event.month == month_num):
+        events_list.append(event.text)
+    await state.set_state(Kallend.date_month)
+    await state.update_data(month=month_data)
+    await callback_query.answer()
+    await callback_query.message.answer(f"Ваши события на {month_name}", reply_markup=all_dates if events_list else dates_add_solo)
+    session.commit()
+    session.close()
+
+async def check_date_with_user_tz(user_id, day, month_num):
     user = session.query(User).filter(User.uid == user_id).first()
     timezone = user.timezone
 
@@ -288,84 +299,82 @@ async def date_month(callback_query: CallbackQuery, state: FSMContext):
     current_month = now_user.month
     current_day = now_user.day
     year_num = current_year
-    last_day = monthrange(year_num, month_num)[1]
+    if not day:
+        last_day = monthrange(year_num, month_num)[1]
     last_day_of_month = datetime(year_num, month_num, last_day, 23, 59, 59, tzinfo=user_tz)
 
     if (year_num < current_year) or \
        (year_num == current_year and month_num < current_month) or \
        (year_num == current_year and month_num == current_month and current_day >= last_day):
-        if month_num == 12:
-            month_num = 1
-            year_num = year_num + 1
-        else:
-            month_num = month_num + 1
-            year_num = year_num + 1
-    events_list = []
-    for event in session.query(Event).filter(Event.user_id == user_id, Event.year == year_num, Event.month == month_num):
-        events_list.append(event.text)
-    await state.set_state(Kallend.date_check)
-    await state.update_data(month=month_num, year=year_num)
-    await callback_query.answer()
-    await callback_query.message.answer(f"Ваши события на {month_name} {year_num} года", reply_markup=all_dates if events_list else dates_add_solo)
-
-    session.commit()
-    session.close()
+        return year_num + 1
+    return year_num
 
 @dp.callback_query(F.data == "date_add")
 async def date_num(callback: CallbackQuery, state: FSMContext):
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
     try:
-        month = await state.get_data()
-        select_month = month.get("month")[:3]
+        data = await state.get_data()
+        month_data = data.get("month")
+        month_num = months_buttons[month_data][1]
+        last_day = 0
+        if month_num == 2:
+            last_day = months_buttons[month_data][2]
+            user = session.query(User).filter(User.uid == user_id).first()
+            timezone = user.timezone
+            user_tz = pytz.timezone(timezone)
+            now_user = datetime.now(user_tz)
+            current_year = now_user.year
+            if current_year % 4 == 0:
+                last_day += 1
+        else:
+            last_day = months_buttons[month_data][2]
         await callback.answer()
-        await callback.message.answer(f"Выберите число {morph.parse(months_buttons[select_month][0][:-1])[0].inflect({'NOUN', 'gent'}).word.capitalize()} {months_buttons[select_month][2]} года", reply_markup=await month_nums(select_month, months_buttons[select_month][1], "add"))
-    except NameError:
+        await callback.message.answer(f"Выберите число {morph.parse(months_buttons[month_data][0][:-1])[0].inflect({'NOUN', 'gent'}).word.capitalize()}", reply_markup=await month_nums(month_data, last_day, "add"))
+        session.commit()
+        session.close()
+    except NameError as e:
         await callback.answer()
         await callback.message.answer("Cначала выберите месяц")
 
+async def month_nums(month_data, last_day, com):
+    days = InlineKeyboardBuilder()
+    if com == "add":
+        for day in range(1, last_day + 1):
+            days.add(InlineKeyboardButton(text=str(day), callback_data=f"{month_data}{day}add"))
+    return days.adjust(5).as_markup()
+
+
 @dp.callback_query(lambda call: call.data[-3:] == "add")
 async def date_input_add(callback_query: CallbackQuery, state: FSMContext):
-    try:
-        month = await state.get_data()
-        select_month = month.get("month")[:3]
-        num = callback_query.data[3:-3]
-        await state.update_data(month=str(select_month) + str(num))
-        await state.set_state(Kallend.date_add)
-        await callback_query.answer()
-        today = datetime.now()
-        choosed_date = datetime(year=months_buttons[select_month][2], month=list(months_buttons.keys()).index(select_month) + 1, day=int(num))
-        if (today - choosed_date).days < 0:
-            date_year = months_buttons[select_month][2]
-            await callback_query.message.answer(f"Добавьте событие на {num} {morph.parse(months_buttons[select_month][0][:-1])[0].inflect({'NOUN', 'gent'}).word.capitalize()} {date_year} года")
-        else:
-            date_year = months_buttons[select_month][2] + 1
-            await callback_query.message.answer(f"Добавьте событие на {num} {morph.parse(months_buttons[select_month][0][:-1])[0].inflect({'NOUN', 'gent'}).word.capitalize()} {date_year} года")
-        await state.update_data(year=date_year)
-    except NameError:
-        await callback_query.answer()
-        await callback_query.message.answer("Cначала выберите месяц")
+    user_id = callback_query.from_user.id
+    data = await state.get_data()
+    month_data = data.get("month")
+    day_data = callback_query.data
+    day = day_data[3:-3]
+    await callback_query.answer()
+    await callback_query.message.answer(f"Добавьте событие на {day} {morph.parse(months_buttons[month_data][0][:-1])[0].inflect({'NOUN', 'gent'}).word.capitalize()}")
+    await state.set_state(Kallend.date_add)
+    await state.update_data(month=month_data, day=day_data)
     
 @dp.message(Kallend.date_add)
 async def date_add(message: Message, state: FSMContext):
+    db_session.global_init("db/my_base.db")
+    session = db_session.create_session()
     user_id = message.from_user.id
-    await state.update_data(event=message.text)
+    event_text = message.text
     data = await state.get_data()
-    year = data.get("year")
-    month = data.get("month")[:3]
-    num = data.get("month")[3:]
-    event = data.get("event")
-    if num in months_dates[month]:
-        if event not in months_dates[month][num][0]:
-            months_dates[month][num][0].append(event)
-            await message.answer(f"Событие '{event}' успешно добавлено")
-        else:
-            await message.answer(f"Событие '{event}' уже было добавлено")
-    else:
-        months_dates[month][num] = [[event], year]
-        await message.answer(f"Событие '{event}' успешно добавлено")
-    global months_data
-    months_data = await state.get_data()
-    await message.answer(f"Ваши события на {months_buttons[month][0]} {months_buttons[month][2]} года", reply_markup=all_dates if months_dates[month] else dates_add_solo)
+    month_data = data.get("month")
+    day_data = data.get("day")
+    day = day_data[3:-3]
+    event = Event(user_id=user_id, text=event_text, month=months_buttons[month_data][1], day=day)
+    session.add(event)
+    await answer()
+    await message.answer(f"Ваши события на {months_buttons[month_data][0]}", reply_markup=all_dates)
     await state.clear()
+
+    session.commit()
+    session.close()
      
 @dp.callback_query(F.data == "date_del")
 async def dates_del(callback: CallbackQuery, state: FSMContext):
@@ -460,17 +469,8 @@ async def date_checks(callback_query: CallbackQuery, state: FSMContext):
     
 @dp.callback_query(F.data == "date_change")
 async def date_change(callback_query: CallbackQuery):
+    await callback_query.answer()
     await callback_query.message.answer("Введите месяц >>>", reply_markup=await set_months())
-
-async def month_nums(select_month, last_num, com):
-    nums = InlineKeyboardBuilder()
-    if com == "add":
-        for num in range(1, last_num + 1):
-            nums.add(InlineKeyboardButton(text=str(num), callback_data=f"{select_month}{num}add"))
-    elif com == "del":
-        for num in months_dates[select_month]:
-            nums.add(InlineKeyboardButton(text=str(num), callback_data=f"{select_month}{num}del"))
-    return nums.adjust(5).as_markup()
 
 async def inline_events(select_month, num):
     try:
